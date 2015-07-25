@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+	xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+	xmlns:context="http://www.springframework.org/schema/context"
+	xmlns:mvc="http://www.springframework.org/schema/mvc"
+	xmlns:p="http://www.springframework.org/schema/p"
+	xsi:schemaLocation="http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc-4.0.xsd
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd
+		http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+	
+	<!--  
+		需要进行 Spring 整合 SpringMVC 吗 ?
+		还是否需要再加入 Spring 的 IOC 容器 ?
+		是否需要再 web.xml 文件中配置启动 Spring IOC 容器的 ContextLoaderListener ?
+		
+		1. 需要: 通常情况下, 类似于数据源, 事务, 整合其他框架都是放在 Spring 的配置文件中(而不是放在 SpringMVC 的配置文件中).
+		实际上放入 Spring 配置文件对应的 IOC 容器中的还有 Service 和 Dao. 
+		2. 不需要: 都放在 SpringMVC 的配置文件中. 也可以分多个 Spring 的配置文件, 然后使用 import 节点导入其他的配置文件
+
+		问题: 若 Spring 的 IOC 容器和 SpringMVC 的 IOC 容器扫描的包有重合的部分, 就会导致有的 bean 会被创建 2 次.
+		解决:
+		1. 使 Spring 的 IOC 容器扫描的包和 SpringMVC 的 IOC 容器扫描的包没有重合的部分. 
+		2. 使用 exclude-filter 和 include-filter 子节点来规定只能扫描的注解
+	 
+		SpringMVC 的 IOC 容器中的 bean 可以来引用 Spring IOC 容器中的 bean. 
+		返回来呢 ? 反之则不行. Spring IOC 容器中的 bean 却不能来引用 SpringMVC IOC 容器中的 bean!
+	-->
+	<!-- 自动扫描包 -->
+	<context:component-scan base-package="org.zpb.springmvc4" use-default-filters="false">
+		<context:include-filter type="annotation" expression="org.springframework.stereotype.Controller" />
+		<context:include-filter type="annotation" expression="org.springframework.web.bind.annotation.ControllerAdvice" />
+	</context:component-scan>
+	
+	<!-- 
+		视图 解析器：使用视图 的名称来解析视图
+		通过order属性来定义视图解析器的优先级，order值越小优先级越高
+	 -->
+	<bean class="org.springframework.web.servlet.view.BeanNameViewResolver" p:order="10" />
+	
+	<!-- 配置视图 解析器：把hanlder方法返回值解析为实际物理视图 -->
+	<bean class="org.springframework.web.servlet.view.InternalResourceViewResolver">
+		<!-- 前缀 -->
+		<property name="prefix" value="/WEB-INF/views/" />
+		<!-- 后缀 -->
+		<property name="suffix" value=".jsp" />
+	</bean>
+	
+	<!-- 静态资源访问 -->
+	<!-- <mvc:resources location="/image/" mapping="/image/**" />
+	<mvc:resources location="/js/" mapping="/js/**" />
+	<mvc:resources location="/css/" mapping="/css/**" /> -->
+	<!--  
+		default-servlet-handler 将在 SpringMVC 上下文中定义一个 DefaultServletHttpRequestHandler,
+		它会对进入 DispatcherServlet 的请求进行筛查, 如果发现是没有经过映射的请求, 就将该请求交由 WEB 应用服务器默认的 Servlet 处理. 
+		如果不是静态资源的请求，才由 DispatcherServlet 继续处理
+
+		一般 WEB 应用服务器默认的 Servlet 的名称都是 default.
+		若所使用的 WEB 服务器的默认 Servlet 名称不是 default，则需要通过 default-servlet-name 属性显式指定
+		
+	-->
+	<mvc:default-servlet-handler />
+	
+	<!-- 配置国际化资源文件 (必需配置id)-->
+	<bean id="messageSource" class="org.springframework.context.support.ResourceBundleMessageSource" >
+		<property name="basename" value="i18n" />
+	</bean>
+	
+	<!-- 配置直接转发的请求页面 -->
+	<mvc:view-controller path="/success" view-name="success" />
+	
+	<!-- 实际开发中需要配置mvc:annotation-driven -->
+	<mvc:annotation-driven conversion-service="conversionService" /><!-- conversion-service="conversionService" -->
+	
+	<!-- 配资ConversionService -->
+	<!-- ConversionServiceFactoryBean 不支持属性注解例如：@DateTimeFormat(pattern="yyyy-MM-dd") -->
+	<bean id="conversionService" class="org.springframework.format.support.FormattingConversionServiceFactoryBean">
+		<!-- p:converters="empConverter" / -->
+		<property name="converters">
+			<set>
+				<ref bean="empConverter"/>
+			</set>
+		</property>	
+	</bean>
+	
+	<!-- 上传文件 -->
+	<bean id="multipartResolver" class="org.springframework.web.multipart.commons.CommonsMultipartResolver" 
+		p:defaultEncoding="utf-8" p:maxInMemorySize="1024000" />
+	
+	<!-- 配置拦截器 -->
+	<mvc:interceptors>
+		<!-- (1) -->
+		<bean id="handlerInterceptor" class="org.zpb.springmvc4.interceptor.MyInterceptor" />
+		<!-- (2)可配置访问路径 -->
+		<mvc:interceptor>
+			<mvc:mapping path="/**" />
+			<bean id="myInterceptor" class="org.zpb.springmvc4.interceptor.MyInterceptor" />
+		</mvc:interceptor>
+	</mvc:interceptors>
+	
+	<!-- 异常处理 -->
+	<bean class="org.springframework.web.servlet.handler.SimpleMappingExceptionResolver">
+		<!-- 定义默认的异常处理页面，当该异常类型的注册时使用 -->
+		<property name="defaultErrorView" value="error"></property>
+		<!-- 定义异常处理页面用来获取异常信息的变量名，默认名为exception -->
+		<property name="exceptionAttribute" value="ex"></property>
+		<!-- 定义需要特殊处理的异常，用类名或完全路径名作为key，异常也页名作为值 -->
+		<property name="exceptionMappings">
+			<props>
+				<prop key="cn.basttg.core.exception.BusinessException">error-business</prop>
+				<prop key="cn.basttg.core.exception.ParameterException">error-parameter</prop>
+				<!-- 这里还可以继续扩展对不同异常类型的处理 -->
+				<prop key="org.springframework.dao.EmptyResultDataAccessException">error</prop>
+			</props>
+		</property>
+	</bean> 
+</beans>
